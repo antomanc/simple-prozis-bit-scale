@@ -29,7 +29,7 @@ The app communicates with the scale using specific commands sent to the RX chara
 
 ### Data Decoding
 
-- **Battery Level**: Extracted from bytes 2-3 (hex), value 0–100.
+- **Battery Level**: Extracted from the second byte (hex), value 0–100.
 - **Weight**: Extracted from the last 2 bytes (hex), signed 16-bit integer, in grams.
 
 ```mermaid
