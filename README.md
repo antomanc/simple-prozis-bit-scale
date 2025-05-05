@@ -1,50 +1,58 @@
-# Welcome to your Expo app 👋
+# Simple Prozis Bit Scale
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A React Native app to connect, read, and interact with the Prozis Bit Scale via Bluetooth Low Energy (BLE). This project demonstrates the reverse engineering of the scale's BLE protocol, providing weight, battery readings and tare functionality.
 
-## Get started
+## Features
 
-1. Install dependencies
+- **Bluetooth LE Scanning & Connection**: Automatically scans for and connects to the "PROZIS Bit Scale".
+- **Real time Weight Display**: Shows real time weight readings from the scale.
+- **Battery Level Monitoring**: Displays the scale's battery percentage.
+- **Tare Functionality**: Remotely tares the scale from the app.
+- **Save & Manage Weights**: Save, view, and delete multiple weight measurements.
 
-   ```bash
-   npm install
-   ```
+## Reverse Engineering: Prozis Bit Scale BLE Protocol
 
-2. Start the app
+### BLE Service & Characteristics
 
-   ```bash
-   npx expo start
-   ```
+The Prozis Bit Scale uses a Nordic UART-like protocol over BLE. The UUIDs for the service and characteristics are as follows:
 
-In the output, you'll find options to open the app in a
+- **Service UUID**: `6e400001-b5a3-f393-e0a9-e50e24dcca9e`
+- **RX Characteristic (Write)**: `6e400002-b5a3-f393-e0a9-e50e24dcca9e`
+- **TX Characteristic (Notify)**: `6e400003-b5a3-f393-e0a9-e50e24dcca9e`
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Commands
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+The app communicates with the scale using specific commands sent to the RX characteristic. The scale responds with notifications on the TX characteristic.
 
-## Get a fresh project
+- **Start Data Stream**: Send `gwc` to RX characteristic to begin receiving weight data.
+- **Tare**: Send `st` to RX characteristic to tare the scale.
 
-When you're ready, run:
+### Data Decoding
 
-```bash
-npm run reset-project
+- **Battery Level**: Extracted from bytes 2-3 (hex), value 0–100.
+- **Weight**: Extracted from the last 2 bytes (hex), signed 16-bit integer, in grams.
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant Scale
+
+    App->>Scale: Connect via BLE
+    App->>Scale: Write 'gwc' (start)
+    Scale-->>App: Notify (weight, battery)
+    App->>Scale: Write 'st' (tare)
+    Scale-->>App: Notify (weight reset)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Getting Started
 
-## Learn more
+1. Install dependencies:  
+   `npm install`
+2. Run on your device:  
+   `npx expo start`
+3. Ensure Bluetooth and location permissions are granted.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Notes
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- Only works with the Prozis Bit Scale (BLE name: `PROZIS Bit Scale`).
+- Tested only on Android; iOS support may require additional configuration.
