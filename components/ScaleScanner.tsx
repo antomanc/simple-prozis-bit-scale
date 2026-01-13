@@ -1,3 +1,4 @@
+import { useKeepAwake } from 'expo-keep-awake';
 import React, { useState } from 'react';
 import { FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { IconButton, useTheme } from 'react-native-paper';
@@ -7,6 +8,9 @@ import { ThemedText } from './ThemedText';
 const ScaleScanner = () => {
   const { weight, message, tareScale, isConnected, battery } = useBle();
   const theme = useTheme();
+  
+  // Keep screen awake during BLE operations
+  useKeepAwake();
 
   // State for saved weights
   const [savedWeights, setSavedWeights] = useState<number[]>([]);

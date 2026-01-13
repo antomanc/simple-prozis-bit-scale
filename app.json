@@ -44,7 +44,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "react-native-ble-plx",
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "bluetoothAlwaysPermission": "Allow $(PRODUCT_NAME) to connect to your PROZIS Bit Scale for weight measurements"
+        }
+      ],
       [
         "expo-build-properties",
         {
