@@ -2,6 +2,7 @@
 
 # dependencies
 node_modules/
+.pnpm-store/
 
 # Expo
 .expo/
@@ -9,14 +10,50 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native
-.kotlin/
+# Native artifacts
 *.orig.*
+.kotlin/
+
+# Android
+android/app/build/
+android/.gradle/
+android/local.properties
+android/captures/
 *.jks
-*.p8
-*.p12
-*.key
+*.keystore
+*.apk
+*.aab
+
+# iOS
+ios/build/
+ios/DerivedData/
+ios/Pods/
+ios/.xcode.env.local
+**/xcuserdata/
+*.xcuserstate
 *.mobileprovision
+*.cer
+*.p12
+*.p8
+*.key
+
+# Fastlane
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
+
+# secrets / environment variables (Security Priority)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+.env.development
+*.pem
+credentials.json
+google-services.json
+GoogleService-Info.plist
 
 # Metro
 .metro-health-check*
@@ -25,13 +62,21 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+bun-debug.*
 
-# macOS
+# OS
 .DS_Store
-*.pem
+.AppleDouble
+.LSOverride
+Icon
+Thumbs.db
 
-# local env files
-.env*.local
+# IDEs
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
 
 # typescript
 *.tsbuildinfo
