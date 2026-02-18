@@ -93,7 +93,12 @@ const ScaleScanner = () => {
   };
 
   const handleCopySession = async () => {
-    const text = savedWeights.map((w) => `${w}g`).join('\n');
+    const text = savedWeights
+      .map((w) => {
+        if (w < 0) return `${Math.abs(w)}g (removed)`;
+        return `${w}g`;
+      })
+      .join('\n');
     await Clipboard.setStringAsync(text ? `${text}\n` : '');
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
@@ -130,6 +135,11 @@ const ScaleScanner = () => {
     const tick = () => {
       const grams = latestWeightRef.current;
       if (grams === null) return;
+
+      if (Math.abs(grams) < AUTO_SAVE_MIN_G) {
+        resetAutoSaveTracking();
+        return;
+      }
 
       const now = Date.now();
       const lastSaved = lastSavedWeightRef.current;
@@ -195,14 +205,9 @@ const ScaleScanner = () => {
       fontWeight: '500',
     },
     batteryContainer: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 64,
       gap: 8,
     },
     batteryWarningOverlay: {
@@ -214,13 +219,21 @@ const ScaleScanner = () => {
       borderRadius: 999,
     },
     disconnectButton: {
-      position: 'absolute',
-      top: 56,
-      right: 16,
       borderRadius: 20,
     },
     reconnectButton: {
       marginTop: 8,
+    },
+    topBar: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 64,
+      paddingHorizontal: 16,
     },
     batteryBarBackground: {
       width: 90,
@@ -246,6 +259,13 @@ const ScaleScanner = () => {
       justifyContent: 'center',
       marginBottom: 8,
       gap: 8,
+    },
+    actionsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      marginTop: 10,
     },
     centerContentContainer: {
       justifyContent: 'center',
@@ -367,27 +387,30 @@ const ScaleScanner = () => {
           ]}
         >
           <>
-            <Button
-              mode="contained-tonal"
-              onPress={handleDisconnect}
-              loading={disconnecting}
-              disabled={disconnecting}
-              style={styles.disconnectButton}
-              accessibilityLabel="Disconnect scale"
-            >
-              Disconnect
-            </Button>
-            <View style={styles.batteryContainer}>
-              <IconButton
-                icon="battery"
-                size={24}
-                iconColor={theme.colors.primary}
-                style={{ margin: 0 }}
-                disabled
-              />
-              <ThemedText style={styles.batteryText}>
-                {battery !== null ? `${battery} %` : '--'}
-              </ThemedText>
+            <View style={styles.topBar}>
+              <View style={{ width: 96 }} />
+              <View style={styles.batteryContainer}>
+                <IconButton
+                  icon="battery"
+                  size={24}
+                  iconColor={theme.colors.primary}
+                  style={{ margin: 0 }}
+                  disabled
+                />
+                <ThemedText style={styles.batteryText}>
+                  {battery !== null ? `${battery} %` : '--'}
+                </ThemedText>
+              </View>
+              <Button
+                mode="contained-tonal"
+                onPress={handleDisconnect}
+                loading={disconnecting}
+                disabled={disconnecting}
+                style={styles.disconnectButton}
+                accessibilityLabel="Disconnect scale"
+              >
+                Disconnect
+              </Button>
             </View>
             {battery !== null && battery <= 10 && (
               <View
@@ -428,26 +451,24 @@ const ScaleScanner = () => {
                     g
                   </ThemedText>
                 </View>
-                <IconButton
-                  icon="plus"
+              </View>
+              <View style={styles.actionsRow}>
+                <Button
                   mode="contained"
-                  size={28}
-                  style={styles.addButton}
-                  containerColor={theme.colors.primaryContainer}
-                  iconColor={theme.colors.primary}
+                  icon="content-save"
                   onPress={handleSaveWeight}
                   accessibilityLabel="Save weight"
-                />
-                <IconButton
-                  icon="plus-box"
-                  mode="contained"
-                  size={28}
-                  style={styles.addButton}
-                  containerColor={theme.colors.secondaryContainer}
-                  iconColor={theme.colors.onSecondaryContainer}
+                >
+                  Save
+                </Button>
+                <Button
+                  mode="contained-tonal"
+                  icon="content-save-edit"
                   onPress={handleSaveAndTare}
                   accessibilityLabel="Save and tare"
-                />
+                >
+                  Save & Tare
+                </Button>
               </View>
               <TouchableOpacity
                 style={[
@@ -525,7 +546,7 @@ const ScaleScanner = () => {
                         flex: 1,
                       }}
                     >
-                      {item} g
+                      {item < 0 ? `${Math.abs(item)} g (removed)` : `${item} g`}
                     </ThemedText>
                     <IconButton
                       icon="delete-outline"
