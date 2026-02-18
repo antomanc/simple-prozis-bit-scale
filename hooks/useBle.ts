@@ -36,6 +36,8 @@ const useBle = () => {
   const weightSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const isConnectingRef = useRef(false);
   const lastKnownDeviceIdRef = useRef<string | null>(null);
+  const isConnectedRef = useRef(false);
+  const connectionPhaseRef = useRef<ConnectionPhase>('idle');
 
   if (bleManagerRef.current === null) {
     bleManagerRef.current = new BleManager();
@@ -80,6 +82,14 @@ const useBle = () => {
   useEffect(() => {
     tareScale();
   }, [device, tareScale]);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
+
+  useEffect(() => {
+    connectionPhaseRef.current = connectionPhase;
+  }, [connectionPhase]);
 
   const subscribeToWeight = useCallback(async (dev: Device) => {
     weightSubscriptionRef.current?.remove();
@@ -273,8 +283,8 @@ const useBle = () => {
     };
 
     const reconnectLoop = setInterval(() => {
-      if (isConnected) return;
-      if (connectionPhase !== 'reconnecting') return;
+      if (isConnectedRef.current) return;
+      if (connectionPhaseRef.current !== 'reconnecting') return;
       if (isConnectingRef.current) return;
       scanAndConnect();
     }, 1200);
@@ -297,8 +307,7 @@ const useBle = () => {
       bleManagerRef.current?.destroy();
       bleManagerRef.current = null;
     };
-    // eslint-disable-next-line
-  }, [connectToScale, connectionPhase, isConnected, subscribeToWeight, writeCommand]);
+  }, [connectToScale]);
 
   return {
     device,
