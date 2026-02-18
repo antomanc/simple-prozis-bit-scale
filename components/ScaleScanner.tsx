@@ -8,7 +8,7 @@ import { ThemedText } from './ThemedText';
 const ScaleScanner = () => {
   const { weight, message, tareScale, isConnected, battery } = useBle();
   const theme = useTheme();
-  
+
   // Keep screen awake during BLE operations
   useKeepAwake();
 
@@ -36,9 +36,8 @@ const ScaleScanner = () => {
     container: {
       flex: 1,
       flexDirection: 'column',
-      justifyContent: 'flex-end',
+      justifyContent: 'center',
       alignItems: 'center',
-      paddingTop: 16,
     },
     status: {
       fontSize: 16,
@@ -48,18 +47,15 @@ const ScaleScanner = () => {
       fontWeight: '500',
     },
     batteryContainer: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 32,
-      marginBottom: 'auto',
-      paddingHorizontal: 24,
-      paddingVertical: 10,
-      borderRadius: 24,
-      backgroundColor: theme.colors.surfaceVariant,
-      elevation: 2,
-      gap: 12,
-      width: 140,
+      marginTop: 64,
+      gap: 8,
     },
     batteryBarBackground: {
       width: 90,
@@ -77,8 +73,7 @@ const ScaleScanner = () => {
     batteryText: {
       fontWeight: '600',
       fontSize: 16,
-      color: theme.colors.onSurfaceVariant,
-      marginLeft: 8,
+      color: theme.colors.onBackground,
     },
     weightRow: {
       flexDirection: 'row',
@@ -113,12 +108,13 @@ const ScaleScanner = () => {
       alignSelf: 'center',
     },
     savedWeightsSection: {
+      position: 'absolute',
+      bottom: 32,
       width: '90%',
       borderRadius: 24,
       padding: 16,
-      marginTop: 8,
       alignSelf: 'center',
-      maxHeight: '50%',
+      maxHeight: '35%',
     },
     savedWeightsHeader: {
       flexDirection: 'row',
@@ -179,7 +175,6 @@ const ScaleScanner = () => {
               <IconButton
                 icon="battery"
                 size={24}
-                containerColor={theme.colors.secondaryContainer}
                 iconColor={theme.colors.primary}
                 style={{ margin: 0 }}
                 disabled
