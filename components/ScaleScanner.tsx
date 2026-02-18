@@ -3,13 +3,27 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useRef, useState } from 'react';
 import { FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { ActivityIndicator, IconButton, useTheme } from 'react-native-paper';
+import {
+  ActivityIndicator,
+  Button,
+  IconButton,
+  Switch,
+  useTheme,
+} from 'react-native-paper';
 import useBle from '../hooks/useBle';
 import { ThemedText } from './ThemedText';
 
 const ScaleScanner = () => {
-  const { weight, message, tareScale, isConnected, battery, connectionPhase } =
-    useBle();
+  const {
+    weight,
+    message,
+    tareScale,
+    disconnectScale,
+    reconnectScale,
+    isConnected,
+    battery,
+    connectionPhase,
+  } = useBle();
   const theme = useTheme();
 
   // Keep screen awake during BLE operations
@@ -17,6 +31,8 @@ const ScaleScanner = () => {
 
   // State for saved weights
   const [savedWeights, setSavedWeights] = useState<number[]>([]);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const lastSavedWeightRef = useRef<number | null>(null);
   const autoSaveArmedRef = useRef(false);
@@ -76,7 +92,29 @@ const ScaleScanner = () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
+  const handleDisconnect = async () => {
+    if (disconnecting) return;
+    setDisconnecting(true);
+    autoSaveArmedRef.current = false;
+    stableSinceRef.current = null;
+    stableValueRef.current = null;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    await disconnectScale();
+    setDisconnecting(false);
+  };
+
+  const handleReconnect = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    reconnectScale();
+  };
+
   useEffect(() => {
+    if (!autoSaveEnabled) {
+      autoSaveArmedRef.current = false;
+      stableSinceRef.current = null;
+      stableValueRef.current = null;
+      return;
+    }
     if (!isConnected) return;
     if (weight === null || isNaN(Number(weight))) return;
 
@@ -141,7 +179,7 @@ const ScaleScanner = () => {
     stableValueRef.current = null;
 
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [isConnected, weight]);
+  }, [autoSaveEnabled, isConnected, weight]);
 
   const styles = StyleSheet.create({
     container: {
@@ -175,6 +213,15 @@ const ScaleScanner = () => {
       paddingHorizontal: 12,
       paddingVertical: 8,
       borderRadius: 999,
+    },
+    disconnectButton: {
+      position: 'absolute',
+      top: 56,
+      right: 16,
+      borderRadius: 20,
+    },
+    reconnectButton: {
+      marginTop: 8,
     },
     batteryBarBackground: {
       width: 90,
@@ -246,6 +293,12 @@ const ScaleScanner = () => {
       alignItems: 'center',
       gap: 6,
     },
+    autoSaveToggleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
     resetButton: {
       paddingHorizontal: 8,
       paddingVertical: 4,
@@ -295,6 +348,16 @@ const ScaleScanner = () => {
           >
             {message}
           </ThemedText>
+          {connectionPhase === 'idle' && (
+            <Button
+              mode="contained"
+              onPress={handleReconnect}
+              style={styles.reconnectButton}
+              accessibilityLabel="Reconnect to scale"
+            >
+              Reconnect
+            </Button>
+          )}
         </View>
       )}
       {isConnected && (
@@ -305,6 +368,16 @@ const ScaleScanner = () => {
           ]}
         >
           <>
+            <Button
+              mode="contained-tonal"
+              onPress={handleDisconnect}
+              loading={disconnecting}
+              disabled={disconnecting}
+              style={styles.disconnectButton}
+              accessibilityLabel="Disconnect scale"
+            >
+              Disconnect
+            </Button>
             <View style={styles.batteryContainer}>
               <IconButton
                 icon="battery"
@@ -430,6 +503,16 @@ const ScaleScanner = () => {
                     </ThemedText>
                   </TouchableOpacity>
                 </View>
+              </View>
+              <View style={styles.autoSaveToggleRow}>
+                <ThemedText style={{ color: theme.colors.onSurface }}>
+                  Auto-save stable weight
+                </ThemedText>
+                <Switch
+                  value={autoSaveEnabled}
+                  onValueChange={setAutoSaveEnabled}
+                  accessibilityLabel="Toggle auto-save stable weight"
+                />
               </View>
               <FlatList
                 data={savedWeights}

@@ -38,6 +38,7 @@ const useBle = () => {
   const lastKnownDeviceIdRef = useRef<string | null>(null);
   const isConnectedRef = useRef(false);
   const connectionPhaseRef = useRef<ConnectionPhase>('idle');
+  const manualDisconnectRef = useRef(false);
 
   if (bleManagerRef.current === null) {
     bleManagerRef.current = new BleManager();
@@ -155,10 +156,16 @@ const useBle = () => {
         await connected.discoverAllServicesAndCharacteristics();
 
         lastKnownDeviceIdRef.current = connected.id;
+        manualDisconnectRef.current = false;
 
         disconnectedSubscriptionRef.current = connected.onDisconnected(() => {
           setIsConnected(false);
           setDevice(null);
+          if (manualDisconnectRef.current) {
+            setConnectionPhase('idle');
+            setMessage('Disconnected. Turn on the scale to reconnect.');
+            return;
+          }
           setConnectionPhase('reconnecting');
           setMessage('Scale disconnected. Reconnecting...');
         });
@@ -221,6 +228,7 @@ const useBle = () => {
     const scanAndConnect = async () => {
       const bleManager = bleManagerRef.current;
       if (!bleManager) return;
+      if (manualDisconnectRef.current) return;
       try {
         const state = await bleManager.state();
         if (state !== 'PoweredOn') {
@@ -309,12 +317,57 @@ const useBle = () => {
     };
   }, [connectToScale]);
 
+  const disconnectScale = useCallback(async () => {
+    const bleManager = bleManagerRef.current;
+    if (!bleManager) return;
+
+    manualDisconnectRef.current = true;
+    isConnectingRef.current = false;
+
+    bleManager.stopDeviceScan();
+    clearDeviceSubscriptions();
+
+    const currentDeviceId = device?.id ?? lastKnownDeviceIdRef.current;
+
+    try {
+      if (currentDeviceId) {
+        await bleManager.cancelDeviceConnection(currentDeviceId);
+      }
+    } catch (error: unknown) {
+      const msg = getErrorMessage(error);
+      const alreadyDisconnected = msg.toLowerCase().includes('not connected');
+      if (!alreadyDisconnected) {
+        Toast.show({
+          type: 'error',
+          text1: 'Disconnect error',
+          text2: msg,
+        });
+      }
+    } finally {
+      setDevice(null);
+      setIsConnected(false);
+      setConnectionPhase('idle');
+      setMessage('Disconnected. Turn on the scale to reconnect.');
+      setWeight(null);
+      setBattery(null);
+      lastKnownDeviceIdRef.current = null;
+    }
+  }, [clearDeviceSubscriptions, device]);
+
+  const reconnectScale = useCallback(() => {
+    manualDisconnectRef.current = false;
+    setConnectionPhase('reconnecting');
+    setMessage('Reconnecting to PROZIS Bit Scale...');
+  }, []);
+
   return {
     device,
     isConnected,
     message,
     connectionPhase,
     tareScale,
+    disconnectScale,
+    reconnectScale,
     weight,
     battery,
   };
