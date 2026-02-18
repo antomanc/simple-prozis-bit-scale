@@ -11,6 +11,8 @@ const TX_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 const CMD_START = 'gwc';
 const CMD_TARE = 'st';
 
+const TARGET_SCALE_NAME = 'prozis bit scale';
+
 const useBle = () => {
   const [device, setDevice] = useState<Device | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -19,6 +21,9 @@ const useBle = () => {
   const [battery, setBattery] = useState<number | null>(null);
 
   const bleManagerRef = useRef<BleManager | null>(null);
+  const bleStateSubscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const isConnectingRef = useRef(false);
+
   if (bleManagerRef.current === null) {
     bleManagerRef.current = new BleManager();
   }
@@ -26,6 +31,16 @@ const useBle = () => {
   const getErrorMessage = (error: unknown) => {
     if (error instanceof Error) return error.message;
     return typeof error === 'string' ? error : 'Unknown error';
+  };
+
+  const isTargetScale = (scannedDevice: Device) => {
+    const advertisedName = (scannedDevice.localName ?? scannedDevice.name ?? '')
+      .trim()
+      .toLowerCase();
+
+    if (!advertisedName) return false;
+    if (advertisedName === TARGET_SCALE_NAME) return true;
+    return advertisedName.includes('prozis') && advertisedName.includes('scale');
   };
 
   const writeCommand = useCallback(async (dev: Device, command: string) => {
@@ -117,6 +132,24 @@ const useBle = () => {
     const scanAndConnect = async () => {
       const bleManager = bleManagerRef.current;
       if (!bleManager) return;
+      try {
+        const state = await bleManager.state();
+        if (state !== 'PoweredOn') {
+          setMessage('Turn on Bluetooth to scan for the scale...');
+
+          bleStateSubscriptionRef.current?.remove();
+          const sub = bleManager.onStateChange((nextState) => {
+            if (nextState === 'PoweredOn') {
+              sub.remove();
+              bleStateSubscriptionRef.current = null;
+              scanAndConnect();
+            }
+          }, true);
+          bleStateSubscriptionRef.current = sub;
+          return;
+        }
+      } catch {
+      }
 
       setMessage('Scanning for PROZIS Bit Scale...');
       bleManager.startDeviceScan(null, null, async (error, scannedDevice) => {
@@ -128,28 +161,35 @@ const useBle = () => {
           });
           return;
         }
-        if (scannedDevice?.name === 'PROZIS Bit Scale') {
-          bleManager.stopDeviceScan();
-          setMessage('Connecting to PROZIS Bit Scale...');
-          try {
-            const connected = await bleManager.connectToDevice(
-              scannedDevice.id,
-            );
-            await connected.discoverAllServicesAndCharacteristics();
-            setDevice(connected);
-            setIsConnected(true);
-            setMessage('Connected to PROZIS Bit Scale.');
-            await writeCommand(connected, CMD_START);
-            await subscribeToWeight(connected);
-          } catch (err: unknown) {
-            console.error('Connection error:', err);
-            setMessage('Connection failed.');
-            Toast.show({
-              type: 'error',
-              text1: 'Connection error',
-              text2: getErrorMessage(err),
-            });
-          }
+
+        if (!scannedDevice) return;
+        if (!isTargetScale(scannedDevice)) return;
+        if (isConnectingRef.current) return;
+
+        isConnectingRef.current = true;
+
+        bleManager.stopDeviceScan();
+        setMessage('Connecting to PROZIS Bit Scale...');
+        try {
+          const connected = await bleManager.connectToDevice(
+            scannedDevice.id,
+          );
+          await connected.discoverAllServicesAndCharacteristics();
+          setDevice(connected);
+          setIsConnected(true);
+          setMessage('Connected to PROZIS Bit Scale.');
+          await writeCommand(connected, CMD_START);
+          await subscribeToWeight(connected);
+        } catch (err: unknown) {
+          console.error('Connection error:', err);
+          setMessage('Connection failed.');
+          Toast.show({
+            type: 'error',
+            text1: 'Connection error',
+            text2: getErrorMessage(err),
+          });
+        } finally {
+          isConnectingRef.current = false;
         }
       });
     };
@@ -161,6 +201,10 @@ const useBle = () => {
     })();
 
     return () => {
+      bleStateSubscriptionRef.current?.remove();
+      bleStateSubscriptionRef.current = null;
+
+      bleManagerRef.current?.stopDeviceScan();
       bleManagerRef.current?.destroy();
       bleManagerRef.current = null;
     };
