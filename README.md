@@ -7,10 +7,16 @@ A React Native app to connect, read, and interact with the Prozis Bit Scale via 
 ## Features
 
 - **Bluetooth LE Scanning & Connection**: Automatically scans for and connects to the "PROZIS Bit Scale".
+- **Sticky Reconnect**: Automatically reconnects when the scale turns back on.
 - **Real time Weight Display**: Shows real time weight readings from the scale.
 - **Battery Level Monitoring**: Displays the scale's battery percentage.
+- **Low Battery Warning**: Shows a warning overlay when the scale battery is low.
 - **Tare Functionality**: Remotely tares the scale from the app.
-- **Save & Manage Weights**: Save, view, and delete multiple weight measurements.
+- **Save & Tare**: Save the current weight and immediately tare in one action.
+- **Auto-Save (Stability Hold)**: Optional hands-free auto-save when the weight stays stable for ~2 seconds.
+- **Copy Session to Clipboard**: Copy the full session as formatted text for pasting into other apps.
+- **Disconnect / Reconnect**: Manually disconnect and reconnect to the scale.
+- **Removed Weights**: Negative weights are treated as removals and are displayed/exported as `X g (removed)`.
 
 ## Reverse Engineering: Prozis Bit Scale BLE Protocol
 
@@ -48,13 +54,57 @@ sequenceDiagram
 
 ## Getting Started
 
-1. Install dependencies:  
-   `npm install`
-2. Run on your device:  
-   `npx expo start`
-3. Ensure Bluetooth and location permissions are granted.
+### Prerequisites
+
+- Node.js and npm installed
+- For Android: Android Studio with SDK
+- For iOS: macOS with Xcode 15.0+ (see [iOS_BUILD.md](iOS_BUILD.md))
+
+### Installation
+
+1. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+2. For iOS, generate native code:
+   ```bash
+   npx expo prebuild --platform ios
+   cd ios && pod install
+   ```
+
+### Running the App
+
+**Development Mode:**
+
+```bash
+npx expo start
+```
+
+**On Android:**
+
+```bash
+npx expo run:android
+```
+
+**On iOS:**
+See [iOS_BUILD.md](iOS_BUILD.md) for detailed Xcode build instructions.
+
+## Platform Support
+
+- ✅ **Android**: Fully supported (API 23+)
+- ✅ **iOS**: Supported (iOS 15.1+) - See [iOS_BUILD.md](iOS_BUILD.md) for setup
+
+### iOS-Specific Features
+
+- **Background BLE:** Disabled (foreground only)
+- **Screen Wake Lock:** Enabled to prevent sleep during measurements
+- **Privacy Manifest:** Included for App Store compliance
+- **Bluetooth Permission:** Properly configured via app.json
 
 ## Notes
 
-- Only works with the Prozis Bit Scale (BLE name: `PROZIS Bit Scale`).
-- Tested only on Android; iOS support may require additional configuration.
+- Only works with the Prozis Bit Scale (BLE name: `PROZIS Bit Scale`)
+- BLE requires physical device (does not work on iOS Simulator or Android Emulator)
+- Ensure Bluetooth and location permissions are granted

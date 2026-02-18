@@ -28,7 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>simpleprozisbitscale</string>
-          <string>com.anonymous.simpleprozisbitscale</string>
+          <string>com.antomanc.simpleprozisbitscale</string>
         </array>
       </dict>
     </array>
@@ -46,7 +46,9 @@
       <true/>
     </dict>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to connect to bluetooth devices</string>
+    <string>Allow $(PRODUCT_NAME) to connect to your PROZIS Bit Scale for weight measurements</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>Allow $(PRODUCT_NAME) to connect to your PROZIS Bit Scale for weight measurements</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

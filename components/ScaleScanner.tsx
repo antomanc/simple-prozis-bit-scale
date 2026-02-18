@@ -1,30 +1,90 @@
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { IconButton, useTheme } from 'react-native-paper';
+import {
+  ActivityIndicator,
+  Button,
+  IconButton,
+  Switch,
+  useTheme,
+} from 'react-native-paper';
 import useBle from '../hooks/useBle';
 import { ThemedText } from './ThemedText';
 
+const AUTO_SAVE_STABLE_MS = 2000;
+const AUTO_SAVE_TOLERANCE_G = 1;
+const AUTO_SAVE_MIN_G = 2;
+const AUTO_SAVE_MIN_DELTA_G = 2;
+const AUTO_SAVE_CHECK_INTERVAL_MS = 150;
+
 const ScaleScanner = () => {
-  const { weight, message, tareScale, isConnected, battery } = useBle();
+  const {
+    weight,
+    message,
+    tareScale,
+    disconnectScale,
+    reconnectScale,
+    isConnected,
+    battery,
+    connectionPhase,
+  } = useBle();
   const theme = useTheme();
-  
+
   // Keep screen awake during BLE operations
   useKeepAwake();
 
   // State for saved weights
   const [savedWeights, setSavedWeights] = useState<number[]>([]);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const lastSavedWeightRef = useRef<number | null>(null);
+  const autoSaveArmedRef = useRef(false);
+  const stableSinceRef = useRef<number | null>(null);
+  const stableValueRef = useRef<number | null>(null);
+  const latestWeightRef = useRef<number | null>(null);
+
+  const resetAutoSaveTracking = useCallback(() => {
+    autoSaveArmedRef.current = false;
+    stableSinceRef.current = null;
+    stableValueRef.current = null;
+  }, []);
+
+  const saveWeightValue = useCallback((grams: number) => {
+    setSavedWeights((prev) => [grams, ...prev]);
+  }, []);
 
   // Save current weight
-  const handleSaveWeight = () => {
-    if (weight && !isNaN(Number(weight))) {
-      setSavedWeights([Number(weight), ...savedWeights]);
-    }
+  const handleSaveWeight = async () => {
+    if (weight === null || isNaN(Number(weight))) return;
+    const grams = Number(weight);
+    saveWeightValue(grams);
+    lastSavedWeightRef.current = grams;
+    resetAutoSaveTracking();
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const handleSaveAndTare = async () => {
+    if (weight === null || isNaN(Number(weight))) return;
+    const grams = Number(weight);
+    saveWeightValue(grams);
+    lastSavedWeightRef.current = grams;
+    resetAutoSaveTracking();
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    await tareScale();
+  };
+
+  const handleTare = async () => {
+    resetAutoSaveTracking();
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    await tareScale();
   };
 
   // Delete a single weight
   const handleDeleteWeight = (index: number) => {
-    setSavedWeights(savedWeights.filter((_, i) => i !== index));
+    setSavedWeights((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Reset all saved weights
@@ -32,13 +92,110 @@ const ScaleScanner = () => {
     setSavedWeights([]);
   };
 
+  const handleCopySession = async () => {
+    const text = savedWeights
+      .map((w) => {
+        if (w < 0) return `${Math.abs(w)}g (removed)`;
+        return `${w}g`;
+      })
+      .join('\n');
+    await Clipboard.setStringAsync(text ? `${text}\n` : '');
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const handleDisconnect = async () => {
+    if (disconnecting) return;
+    setDisconnecting(true);
+    resetAutoSaveTracking();
+    latestWeightRef.current = null;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    await disconnectScale();
+    setDisconnecting(false);
+  };
+
+  const handleReconnect = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    reconnectScale();
+  };
+
+  useEffect(() => {
+    if (weight === null || isNaN(Number(weight))) {
+      latestWeightRef.current = null;
+      return;
+    }
+    latestWeightRef.current = Number(weight);
+  }, [weight]);
+
+  useEffect(() => {
+    if (!autoSaveEnabled || !isConnected) {
+      resetAutoSaveTracking();
+      return;
+    }
+
+    const tick = () => {
+      const grams = latestWeightRef.current;
+      if (grams === null) return;
+
+      if (Math.abs(grams) < AUTO_SAVE_MIN_G) {
+        resetAutoSaveTracking();
+        return;
+      }
+
+      const now = Date.now();
+      const lastSaved = lastSavedWeightRef.current;
+      const differsFromLastSaved =
+        lastSaved === null || Math.abs(grams - lastSaved) >= AUTO_SAVE_MIN_DELTA_G;
+      const weightIsMeaningful = Math.abs(grams) >= AUTO_SAVE_MIN_G;
+
+      if (!autoSaveArmedRef.current) {
+        if (!differsFromLastSaved || !weightIsMeaningful) return;
+        autoSaveArmedRef.current = true;
+        stableSinceRef.current = now;
+        stableValueRef.current = grams;
+        return;
+      }
+
+      if (stableValueRef.current === null || stableSinceRef.current === null) {
+        stableSinceRef.current = now;
+        stableValueRef.current = grams;
+        return;
+      }
+
+      if (Math.abs(grams - stableValueRef.current) > AUTO_SAVE_TOLERANCE_G) {
+        stableSinceRef.current = now;
+        stableValueRef.current = grams;
+        return;
+      }
+
+      if (now - stableSinceRef.current < AUTO_SAVE_STABLE_MS) return;
+
+      const shouldSave =
+        lastSavedWeightRef.current === null ||
+        Math.abs(grams - lastSavedWeightRef.current) >= AUTO_SAVE_MIN_DELTA_G;
+      if (!shouldSave) {
+        resetAutoSaveTracking();
+        return;
+      }
+
+      saveWeightValue(grams);
+      lastSavedWeightRef.current = grams;
+      resetAutoSaveTracking();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    };
+
+    tick();
+    const intervalId = setInterval(tick, AUTO_SAVE_CHECK_INTERVAL_MS);
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [autoSaveEnabled, isConnected, resetAutoSaveTracking, saveWeightValue]);
+
   const styles = StyleSheet.create({
     container: {
       flex: 1,
       flexDirection: 'column',
-      justifyContent: 'flex-end',
+      justifyContent: 'center',
       alignItems: 'center',
-      paddingTop: 16,
     },
     status: {
       fontSize: 16,
@@ -51,15 +208,33 @@ const ScaleScanner = () => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 32,
-      marginBottom: 'auto',
-      paddingHorizontal: 24,
-      paddingVertical: 10,
-      borderRadius: 24,
-      backgroundColor: theme.colors.surfaceVariant,
-      elevation: 2,
-      gap: 12,
-      width: 140,
+      gap: 8,
+    },
+    batteryWarningOverlay: {
+      position: 'absolute',
+      top: 112,
+      alignSelf: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+    },
+    disconnectButton: {
+      borderRadius: 20,
+    },
+    reconnectButton: {
+      marginTop: 8,
+    },
+    topBar: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 64,
+      paddingHorizontal: 16,
+      gap: 20,
     },
     batteryBarBackground: {
       width: 90,
@@ -77,8 +252,7 @@ const ScaleScanner = () => {
     batteryText: {
       fontWeight: '600',
       fontSize: 16,
-      color: theme.colors.onSurfaceVariant,
-      marginLeft: 8,
+      color: theme.colors.onBackground,
     },
     weightRow: {
       flexDirection: 'row',
@@ -86,6 +260,13 @@ const ScaleScanner = () => {
       justifyContent: 'center',
       marginBottom: 8,
       gap: 8,
+    },
+    actionsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      marginTop: 10,
     },
     centerContentContainer: {
       justifyContent: 'center',
@@ -113,14 +294,26 @@ const ScaleScanner = () => {
       alignSelf: 'center',
     },
     savedWeightsSection: {
+      position: 'absolute',
+      bottom: 32,
       width: '90%',
       borderRadius: 24,
       padding: 16,
-      marginTop: 8,
       alignSelf: 'center',
-      maxHeight: '50%',
+      maxHeight: '35%',
     },
     savedWeightsHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    autoSaveToggleRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -151,7 +344,7 @@ const ScaleScanner = () => {
 
   return (
     <>
-      {message && !isConnected && (
+      {!isConnected && (
         <View
           style={{
             flex: 1,
@@ -160,11 +353,31 @@ const ScaleScanner = () => {
             backgroundColor: theme.colors.background,
           }}
         >
+          {(connectionPhase === 'scanning' ||
+            connectionPhase === 'connecting' ||
+            connectionPhase === 'reconnecting') && (
+              <ActivityIndicator
+                animating
+                size="large"
+                color={theme.colors.primary}
+                style={{ marginBottom: 18 }}
+              />
+            )}
           <ThemedText
             style={[styles.status, { color: theme.colors.onBackground }]}
           >
             {message}
           </ThemedText>
+          {connectionPhase === 'idle' && (
+            <Button
+              mode="contained"
+              onPress={handleReconnect}
+              style={styles.reconnectButton}
+              accessibilityLabel="Reconnect to scale"
+            >
+              Reconnect
+            </Button>
+          )}
         </View>
       )}
       {isConnected && (
@@ -175,19 +388,46 @@ const ScaleScanner = () => {
           ]}
         >
           <>
-            <View style={styles.batteryContainer}>
-              <IconButton
-                icon="battery"
-                size={24}
-                containerColor={theme.colors.secondaryContainer}
-                iconColor={theme.colors.primary}
-                style={{ margin: 0 }}
-                disabled
-              />
-              <ThemedText style={styles.batteryText}>
-                {battery !== null ? `${battery} %` : '--'}
-              </ThemedText>
+            <View style={styles.topBar}>
+              <View style={{ width: 96 }} />
+              <View style={styles.batteryContainer}>
+                <IconButton
+                  icon="battery"
+                  size={24}
+                  iconColor={theme.colors.primary}
+                  style={{ margin: 0 }}
+                  disabled
+                />
+                <ThemedText style={styles.batteryText}>
+                  {battery !== null ? `${battery} %` : '--'}
+                </ThemedText>
+              </View>
+              <Button
+                mode="contained-tonal"
+                onPress={handleDisconnect}
+                loading={disconnecting}
+                disabled={disconnecting}
+                style={styles.disconnectButton}
+                accessibilityLabel="Disconnect scale"
+              >
+                Disconnect
+              </Button>
             </View>
+            {battery !== null && battery <= 10 && (
+              <View
+                style={[
+                  styles.batteryWarningOverlay,
+                  { backgroundColor: theme.colors.errorContainer },
+                ]}
+              >
+                <ThemedText
+                  type="defaultSemiBold"
+                  style={{ color: theme.colors.onErrorContainer }}
+                >
+                  Low battery ({battery}%)
+                </ThemedText>
+              </View>
+            )}
             <View style={styles.centerContentContainer}>
               {/* Battery Counter */}
 
@@ -212,23 +452,31 @@ const ScaleScanner = () => {
                     g
                   </ThemedText>
                 </View>
-                <IconButton
-                  icon="plus"
+              </View>
+              <View style={styles.actionsRow}>
+                <Button
                   mode="contained"
-                  size={28}
-                  style={styles.addButton}
-                  containerColor={theme.colors.primaryContainer}
-                  iconColor={theme.colors.primary}
+                  icon="content-save"
                   onPress={handleSaveWeight}
                   accessibilityLabel="Save weight"
-                />
+                >
+                  Save
+                </Button>
+                <Button
+                  mode="contained-tonal"
+                  icon="content-save-edit"
+                  onPress={handleSaveAndTare}
+                  accessibilityLabel="Save and tare"
+                >
+                  Save & Tare
+                </Button>
               </View>
               <TouchableOpacity
                 style={[
                   styles.tareButton,
                   { backgroundColor: theme.colors.primary },
                 ]}
-                onPress={tareScale}
+                onPress={handleTare}
                 activeOpacity={0.85}
                 disabled={!isConnected}
               >
@@ -252,22 +500,40 @@ const ScaleScanner = () => {
                 >
                   Saved weights
                 </ThemedText>
-                <TouchableOpacity
-                  style={styles.resetButton}
-                  onPress={handleResetWeights}
-                  accessibilityLabel="Reset all saved weights"
-                >
-                  <ThemedText
-                    type="default"
-                    style={{
-                      color: theme.colors.error,
-                      fontWeight: 'bold',
-                      fontSize: 14,
-                    }}
+                <View style={styles.headerActions}>
+                  <IconButton
+                    icon="content-copy"
+                    size={20}
+                    onPress={handleCopySession}
+                    accessibilityLabel="Copy session to clipboard"
+                  />
+                  <TouchableOpacity
+                    style={styles.resetButton}
+                    onPress={handleResetWeights}
+                    accessibilityLabel="Reset all saved weights"
                   >
-                    Reset All
-                  </ThemedText>
-                </TouchableOpacity>
+                    <ThemedText
+                      type="default"
+                      style={{
+                        color: theme.colors.error,
+                        fontWeight: 'bold',
+                        fontSize: 14,
+                      }}
+                    >
+                      Reset All
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={styles.autoSaveToggleRow}>
+                <ThemedText style={{ color: theme.colors.onSurface }}>
+                  Auto-save stable weight
+                </ThemedText>
+                <Switch
+                  value={autoSaveEnabled}
+                  onValueChange={setAutoSaveEnabled}
+                  accessibilityLabel="Toggle auto-save stable weight"
+                />
               </View>
               <FlatList
                 data={savedWeights}
@@ -281,7 +547,7 @@ const ScaleScanner = () => {
                         flex: 1,
                       }}
                     >
-                      {item} g
+                      {item < 0 ? `${Math.abs(item)} g (removed)` : `${item} g`}
                     </ThemedText>
                     <IconButton
                       icon="delete-outline"
