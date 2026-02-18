@@ -257,7 +257,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.simpleprozisbitscale";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.antomanc.simpleprozisbitscale";
 				PRODUCT_NAME = "simpleprozisbitscale";
 				SWIFT_OBJC_BRIDGING_HEADER = "simpleprozisbitscale/simpleprozisbitscale-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -286,7 +286,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.simpleprozisbitscale";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.antomanc.simpleprozisbitscale";
 				PRODUCT_NAME = "simpleprozisbitscale";
 				SWIFT_OBJC_BRIDGING_HEADER = "simpleprozisbitscale/simpleprozisbitscale-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

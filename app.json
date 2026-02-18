@@ -10,7 +10,12 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.antomanc.simpleprozisbitscale"
+      "bundleIdentifier": "com.antomanc.simpleprozisbitscale",
+      "deploymentTarget": "15.1",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Allow $(PRODUCT_NAME) to connect to your PROZIS Bit Scale for weight measurements",
+        "NSBluetoothPeripheralUsageDescription": "Allow $(PRODUCT_NAME) to connect to your PROZIS Bit Scale for weight measurements"
+      }
     },
     "android": {
       "adaptiveIcon": {

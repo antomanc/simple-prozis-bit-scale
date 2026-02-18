@@ -1,5 +1,5 @@
 import { Buffer } from 'buffer';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
 import Toast from 'react-native-toast-message';
@@ -18,7 +18,15 @@ const useBle = () => {
   const [weight, setWeight] = useState<number | null>(null);
   const [battery, setBattery] = useState<number | null>(null);
 
-  const bleManager = new BleManager();
+  const bleManagerRef = useRef<BleManager | null>(null);
+  if (bleManagerRef.current === null) {
+    bleManagerRef.current = new BleManager();
+  }
+
+  const getErrorMessage = (error: unknown) => {
+    if (error instanceof Error) return error.message;
+    return typeof error === 'string' ? error : 'Unknown error';
+  };
 
   const writeCommand = useCallback(async (dev: Device, command: string) => {
     const services = await dev.services();
@@ -27,8 +35,7 @@ const useBle = () => {
     const characteristics = await service.characteristics();
     const rxChar = characteristics.find((c) => c.uuid === RX_CHAR_UUID);
     if (!rxChar) throw new Error('RX characteristic not found');
-    const encoded = new TextEncoder().encode(command);
-    await rxChar.writeWithoutResponse(Buffer.from(encoded).toString('base64'));
+    await rxChar.writeWithoutResponse(Buffer.from(command, 'utf8').toString('base64'));
   }, []);
 
   const tareScale = useCallback(async () => {
@@ -37,8 +44,8 @@ const useBle = () => {
     }
     try {
       await writeCommand(device, CMD_TARE);
-    } catch (error: any) {
-      Toast.show({ type: 'error', text1: 'Tare error', text2: error.message });
+    } catch (error: unknown) {
+      Toast.show({ type: 'error', text1: 'Tare error', text2: getErrorMessage(error) });
     }
   }, [device, writeCommand]);
 
@@ -108,6 +115,9 @@ const useBle = () => {
     };
 
     const scanAndConnect = async () => {
+      const bleManager = bleManagerRef.current;
+      if (!bleManager) return;
+
       setMessage('Scanning for PROZIS Bit Scale...');
       bleManager.startDeviceScan(null, null, async (error, scannedDevice) => {
         if (error) {
@@ -131,13 +141,13 @@ const useBle = () => {
             setMessage('Connected to PROZIS Bit Scale.');
             await writeCommand(connected, CMD_START);
             await subscribeToWeight(connected);
-          } catch (err: any) {
+          } catch (err: unknown) {
             console.error('Connection error:', err);
             setMessage('Connection failed.');
             Toast.show({
               type: 'error',
               text1: 'Connection error',
-              text2: err.message,
+              text2: getErrorMessage(err),
             });
           }
         }
@@ -151,7 +161,8 @@ const useBle = () => {
     })();
 
     return () => {
-      bleManager.destroy();
+      bleManagerRef.current?.destroy();
+      bleManagerRef.current = null;
     };
     // eslint-disable-next-line
   }, [subscribeToWeight, writeCommand]);

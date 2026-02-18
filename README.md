@@ -48,13 +48,57 @@ sequenceDiagram
 
 ## Getting Started
 
-1. Install dependencies:  
-   `npm install`
-2. Run on your device:  
-   `npx expo start`
-3. Ensure Bluetooth and location permissions are granted.
+### Prerequisites
+
+- Node.js and npm installed
+- For Android: Android Studio with SDK
+- For iOS: macOS with Xcode 15.0+ (see [iOS_BUILD.md](iOS_BUILD.md))
+
+### Installation
+
+1. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+2. For iOS, generate native code:
+   ```bash
+   npx expo prebuild --platform ios
+   cd ios && pod install
+   ```
+
+### Running the App
+
+**Development Mode:**
+
+```bash
+npx expo start
+```
+
+**On Android:**
+
+```bash
+npx expo run:android
+```
+
+**On iOS:**
+See [iOS_BUILD.md](iOS_BUILD.md) for detailed Xcode build instructions.
+
+## Platform Support
+
+- ✅ **Android**: Fully supported (API 23+)
+- ✅ **iOS**: Supported (iOS 15.1+) - See [iOS_BUILD.md](iOS_BUILD.md) for setup
+
+### iOS-Specific Features
+
+- **Background BLE:** Disabled (foreground only)
+- **Screen Wake Lock:** Enabled to prevent sleep during measurements
+- **Privacy Manifest:** Included for App Store compliance
+- **Bluetooth Permission:** Properly configured via app.json
 
 ## Notes
 
-- Only works with the Prozis Bit Scale (BLE name: `PROZIS Bit Scale`).
-- Tested only on Android; iOS support may require additional configuration.
+- Only works with the Prozis Bit Scale (BLE name: `PROZIS Bit Scale`)
+- BLE requires physical device (does not work on iOS Simulator or Android Emulator)
+- Ensure Bluetooth and location permissions are granted
