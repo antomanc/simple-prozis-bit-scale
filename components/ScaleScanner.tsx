@@ -1,7 +1,7 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
 import {
   ActivityIndicator,
@@ -12,6 +12,12 @@ import {
 } from 'react-native-paper';
 import useBle from '../hooks/useBle';
 import { ThemedText } from './ThemedText';
+
+const AUTO_SAVE_STABLE_MS = 2000;
+const AUTO_SAVE_TOLERANCE_G = 1;
+const AUTO_SAVE_MIN_G = 2;
+const AUTO_SAVE_MIN_DELTA_G = 2;
+const AUTO_SAVE_CHECK_INTERVAL_MS = 150;
 
 const ScaleScanner = () => {
   const {
@@ -38,11 +44,17 @@ const ScaleScanner = () => {
   const autoSaveArmedRef = useRef(false);
   const stableSinceRef = useRef<number | null>(null);
   const stableValueRef = useRef<number | null>(null);
-  const lastSeenWeightRef = useRef<number | null>(null);
+  const latestWeightRef = useRef<number | null>(null);
 
-  const saveWeightValue = (grams: number) => {
+  const resetAutoSaveTracking = useCallback(() => {
+    autoSaveArmedRef.current = false;
+    stableSinceRef.current = null;
+    stableValueRef.current = null;
+  }, []);
+
+  const saveWeightValue = useCallback((grams: number) => {
     setSavedWeights((prev) => [grams, ...prev]);
-  };
+  }, []);
 
   // Save current weight
   const handleSaveWeight = async () => {
@@ -50,9 +62,7 @@ const ScaleScanner = () => {
     const grams = Number(weight);
     saveWeightValue(grams);
     lastSavedWeightRef.current = grams;
-    autoSaveArmedRef.current = false;
-    stableSinceRef.current = null;
-    stableValueRef.current = null;
+    resetAutoSaveTracking();
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -61,17 +71,13 @@ const ScaleScanner = () => {
     const grams = Number(weight);
     saveWeightValue(grams);
     lastSavedWeightRef.current = grams;
-    autoSaveArmedRef.current = false;
-    stableSinceRef.current = null;
-    stableValueRef.current = null;
+    resetAutoSaveTracking();
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await tareScale();
   };
 
   const handleTare = async () => {
-    autoSaveArmedRef.current = false;
-    stableSinceRef.current = null;
-    stableValueRef.current = null;
+    resetAutoSaveTracking();
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await tareScale();
   };
@@ -95,9 +101,8 @@ const ScaleScanner = () => {
   const handleDisconnect = async () => {
     if (disconnecting) return;
     setDisconnecting(true);
-    autoSaveArmedRef.current = false;
-    stableSinceRef.current = null;
-    stableValueRef.current = null;
+    resetAutoSaveTracking();
+    latestWeightRef.current = null;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await disconnectScale();
     setDisconnecting(false);
@@ -109,77 +114,71 @@ const ScaleScanner = () => {
   };
 
   useEffect(() => {
-    if (!autoSaveEnabled) {
-      autoSaveArmedRef.current = false;
-      stableSinceRef.current = null;
-      stableValueRef.current = null;
+    if (weight === null || isNaN(Number(weight))) {
+      latestWeightRef.current = null;
       return;
     }
-    if (!isConnected) return;
-    if (weight === null || isNaN(Number(weight))) return;
+    latestWeightRef.current = Number(weight);
+  }, [weight]);
 
-    const grams = Number(weight);
-    const now = Date.now();
-
-    const AUTO_SAVE_STABLE_MS = 2000;
-    const AUTO_SAVE_TOLERANCE_G = 1;
-    const AUTO_SAVE_MIN_G = 2;
-    const AUTO_SAVE_MIN_DELTA_G = 2;
-
-    const lastSaved = lastSavedWeightRef.current;
-    const lastSeen = lastSeenWeightRef.current;
-    lastSeenWeightRef.current = grams;
-
-    const differsFromLastSaved =
-      lastSaved === null || Math.abs(grams - lastSaved) >= AUTO_SAVE_MIN_DELTA_G;
-    const weightIsMeaningful = Math.abs(grams) >= AUTO_SAVE_MIN_G;
-
-    if (!autoSaveArmedRef.current && differsFromLastSaved && weightIsMeaningful) {
-      autoSaveArmedRef.current = true;
-      stableSinceRef.current = null;
-      stableValueRef.current = null;
-    }
-
-    if (!autoSaveArmedRef.current) return;
-
-    if (lastSeen !== null && Math.abs(grams - lastSeen) > AUTO_SAVE_TOLERANCE_G) {
-      stableSinceRef.current = null;
-      stableValueRef.current = null;
+  useEffect(() => {
+    if (!autoSaveEnabled || !isConnected) {
+      resetAutoSaveTracking();
       return;
     }
 
-    if (stableSinceRef.current === null || stableValueRef.current === null) {
-      stableSinceRef.current = now;
-      stableValueRef.current = grams;
-      return;
-    }
+    const tick = () => {
+      const grams = latestWeightRef.current;
+      if (grams === null) return;
 
-    if (Math.abs(grams - stableValueRef.current) > AUTO_SAVE_TOLERANCE_G) {
-      stableSinceRef.current = now;
-      stableValueRef.current = grams;
-      return;
-    }
+      const now = Date.now();
+      const lastSaved = lastSavedWeightRef.current;
+      const differsFromLastSaved =
+        lastSaved === null || Math.abs(grams - lastSaved) >= AUTO_SAVE_MIN_DELTA_G;
+      const weightIsMeaningful = Math.abs(grams) >= AUTO_SAVE_MIN_G;
 
-    if (now - stableSinceRef.current < AUTO_SAVE_STABLE_MS) return;
+      if (!autoSaveArmedRef.current) {
+        if (!differsFromLastSaved || !weightIsMeaningful) return;
+        autoSaveArmedRef.current = true;
+        stableSinceRef.current = now;
+        stableValueRef.current = grams;
+        return;
+      }
 
-    const shouldSave =
-      lastSavedWeightRef.current === null ||
-      Math.abs(grams - lastSavedWeightRef.current) > AUTO_SAVE_TOLERANCE_G;
-    if (!shouldSave) {
-      autoSaveArmedRef.current = false;
-      stableSinceRef.current = null;
-      stableValueRef.current = null;
-      return;
-    }
+      if (stableValueRef.current === null || stableSinceRef.current === null) {
+        stableSinceRef.current = now;
+        stableValueRef.current = grams;
+        return;
+      }
 
-    saveWeightValue(grams);
-    lastSavedWeightRef.current = grams;
-    autoSaveArmedRef.current = false;
-    stableSinceRef.current = null;
-    stableValueRef.current = null;
+      if (Math.abs(grams - stableValueRef.current) > AUTO_SAVE_TOLERANCE_G) {
+        stableSinceRef.current = now;
+        stableValueRef.current = grams;
+        return;
+      }
 
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [autoSaveEnabled, isConnected, weight]);
+      if (now - stableSinceRef.current < AUTO_SAVE_STABLE_MS) return;
+
+      const shouldSave =
+        lastSavedWeightRef.current === null ||
+        Math.abs(grams - lastSavedWeightRef.current) >= AUTO_SAVE_MIN_DELTA_G;
+      if (!shouldSave) {
+        resetAutoSaveTracking();
+        return;
+      }
+
+      saveWeightValue(grams);
+      lastSavedWeightRef.current = grams;
+      resetAutoSaveTracking();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    };
+
+    tick();
+    const intervalId = setInterval(tick, AUTO_SAVE_CHECK_INTERVAL_MS);
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [autoSaveEnabled, isConnected, resetAutoSaveTracking, saveWeightValue]);
 
   const styles = StyleSheet.create({
     container: {

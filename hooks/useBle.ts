@@ -1,17 +1,16 @@
-import { Buffer } from 'buffer';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
 import Toast from 'react-native-toast-message';
-
-// BLE UUIDs and Commands
-const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-const RX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-const TX_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
-const CMD_START = 'gwc';
-const CMD_TARE = 'st';
-
-const TARGET_SCALE_NAME = 'prozis bit scale';
+import {
+  CMD_START,
+  CMD_TARE,
+  decodeScaleNotification,
+  RX_CHAR_UUID,
+  SERVICE_UUID,
+  TARGET_SCALE_NAME,
+  TX_CHAR_UUID,
+} from './bleProtocol';
 
 type ConnectionPhase =
   | 'idle'
@@ -109,17 +108,11 @@ const useBle = () => {
         const rawValue = characteristic?.value;
         if (rawValue) {
           try {
-            const buffer = Buffer.from(rawValue, 'base64');
-            const hexValue = buffer.toString('hex');
-            const batteryHex = hexValue.slice(2, 4);
-            const batteryInt = parseInt(batteryHex, 16);
-            if (batteryInt <= 100 && batteryInt >= 0) {
-              setBattery(batteryInt);
+            const payload = decodeScaleNotification(rawValue);
+            setBattery(payload.battery);
+            if (payload.weight !== null) {
+              setWeight(payload.weight);
             }
-            const weightHex = hexValue.slice(-4);
-            const weightInt = parseInt(weightHex, 16);
-            const grams = weightInt > 32767 ? weightInt - 65536 : weightInt;
-            setWeight(grams);
           } catch {
             setBattery(null);
           }
