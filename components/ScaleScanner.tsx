@@ -1,6 +1,6 @@
-import { useKeepAwake } from 'expo-keep-awake';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { useKeepAwake } from 'expo-keep-awake';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
 import {
@@ -234,6 +234,7 @@ const ScaleScanner = () => {
       justifyContent: 'center',
       marginTop: 64,
       paddingHorizontal: 16,
+      gap: 20,
     },
     batteryBarBackground: {
       width: 90,
@@ -355,13 +356,13 @@ const ScaleScanner = () => {
           {(connectionPhase === 'scanning' ||
             connectionPhase === 'connecting' ||
             connectionPhase === 'reconnecting') && (
-            <ActivityIndicator
-              animating
-              size="large"
-              color={theme.colors.primary}
-              style={{ marginBottom: 18 }}
-            />
-          )}
+              <ActivityIndicator
+                animating
+                size="large"
+                color={theme.colors.primary}
+                style={{ marginBottom: 18 }}
+              />
+            )}
           <ThemedText
             style={[styles.status, { color: theme.colors.onBackground }]}
           >
