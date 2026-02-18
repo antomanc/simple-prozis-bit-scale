@@ -13,16 +13,29 @@ const CMD_TARE = 'st';
 
 const TARGET_SCALE_NAME = 'prozis bit scale';
 
+type ConnectionPhase =
+  | 'idle'
+  | 'bluetooth_off'
+  | 'scanning'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'error';
+
 const useBle = () => {
   const [device, setDevice] = useState<Device | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [message, setMessage] = useState('Scanning for PROZIS Bit Scale...');
   const [weight, setWeight] = useState<number | null>(null);
   const [battery, setBattery] = useState<number | null>(null);
+  const [connectionPhase, setConnectionPhase] = useState<ConnectionPhase>('idle');
 
   const bleManagerRef = useRef<BleManager | null>(null);
   const bleStateSubscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const disconnectedSubscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const weightSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const isConnectingRef = useRef(false);
+  const lastKnownDeviceIdRef = useRef<string | null>(null);
 
   if (bleManagerRef.current === null) {
     bleManagerRef.current = new BleManager();
@@ -69,7 +82,8 @@ const useBle = () => {
   }, [device, tareScale]);
 
   const subscribeToWeight = useCallback(async (dev: Device) => {
-    dev.monitorCharacteristicForService(
+    weightSubscriptionRef.current?.remove();
+    weightSubscriptionRef.current = dev.monitorCharacteristicForService(
       SERVICE_UUID,
       TX_CHAR_UUID,
       (error, characteristic) => {
@@ -103,6 +117,71 @@ const useBle = () => {
     );
   }, []);
 
+  const clearDeviceSubscriptions = useCallback(() => {
+    disconnectedSubscriptionRef.current?.remove();
+    disconnectedSubscriptionRef.current = null;
+    weightSubscriptionRef.current?.remove();
+    weightSubscriptionRef.current = null;
+  }, []);
+
+  const connectToScale = useCallback(
+    async (scaleDevice: Device, phase: ConnectionPhase) => {
+      const bleManager = bleManagerRef.current;
+      if (!bleManager) return;
+      if (isConnectingRef.current) return;
+      isConnectingRef.current = true;
+
+      setConnectionPhase(phase);
+      setMessage(
+        phase === 'reconnecting'
+          ? 'Reconnecting to PROZIS Bit Scale...'
+          : 'Connecting to PROZIS Bit Scale...'
+      );
+
+      try {
+        clearDeviceSubscriptions();
+
+        const connected = await bleManager.connectToDevice(scaleDevice.id);
+        await connected.discoverAllServicesAndCharacteristics();
+
+        lastKnownDeviceIdRef.current = connected.id;
+
+        disconnectedSubscriptionRef.current = connected.onDisconnected(() => {
+          setIsConnected(false);
+          setDevice(null);
+          setConnectionPhase('reconnecting');
+          setMessage('Scale disconnected. Reconnecting...');
+        });
+
+        setDevice(connected);
+        setIsConnected(true);
+        setConnectionPhase('connected');
+        setMessage('Connected to PROZIS Bit Scale.');
+
+        await writeCommand(connected, CMD_START);
+        await subscribeToWeight(connected);
+      } catch (err: unknown) {
+        setIsConnected(false);
+        setDevice(null);
+        if (phase === 'reconnecting') {
+          setConnectionPhase('reconnecting');
+          setMessage('Reconnecting to PROZIS Bit Scale...');
+        } else {
+          setConnectionPhase('error');
+          setMessage('Connection failed.');
+          Toast.show({
+            type: 'error',
+            text1: 'Connection error',
+            text2: getErrorMessage(err),
+          });
+        }
+      } finally {
+        isConnectingRef.current = false;
+      }
+    },
+    [clearDeviceSubscriptions, subscribeToWeight, writeCommand],
+  );
+
   useEffect(() => {
     const requestPermissions = async () => {
       if (Platform.OS === 'android') {
@@ -135,6 +214,7 @@ const useBle = () => {
       try {
         const state = await bleManager.state();
         if (state !== 'PoweredOn') {
+          setConnectionPhase('bluetooth_off');
           setMessage('Turn on Bluetooth to scan for the scale...');
 
           bleStateSubscriptionRef.current?.remove();
@@ -151,7 +231,27 @@ const useBle = () => {
       } catch {
       }
 
-      setMessage('Scanning for PROZIS Bit Scale...');
+      const stickyId = lastKnownDeviceIdRef.current;
+      if (stickyId) {
+        setConnectionPhase('reconnecting');
+        setMessage('Reconnecting to PROZIS Bit Scale...');
+        try {
+          const knownDevice = await bleManager.devices([stickyId]);
+          if (knownDevice[0]) {
+            await connectToScale(knownDevice[0], 'reconnecting');
+            return;
+          }
+        } catch {
+        }
+      }
+
+      setConnectionPhase(stickyId ? 'reconnecting' : 'scanning');
+      setMessage(
+        stickyId
+          ? 'Reconnecting to PROZIS Bit Scale...'
+          : 'Scanning for PROZIS Bit Scale...',
+      );
+
       bleManager.startDeviceScan(null, null, async (error, scannedDevice) => {
         if (error) {
           Toast.show({
@@ -159,6 +259,7 @@ const useBle = () => {
             text1: 'Scan error',
             text2: error.message,
           });
+          setConnectionPhase('error');
           return;
         }
 
@@ -166,33 +267,17 @@ const useBle = () => {
         if (!isTargetScale(scannedDevice)) return;
         if (isConnectingRef.current) return;
 
-        isConnectingRef.current = true;
-
         bleManager.stopDeviceScan();
-        setMessage('Connecting to PROZIS Bit Scale...');
-        try {
-          const connected = await bleManager.connectToDevice(
-            scannedDevice.id,
-          );
-          await connected.discoverAllServicesAndCharacteristics();
-          setDevice(connected);
-          setIsConnected(true);
-          setMessage('Connected to PROZIS Bit Scale.');
-          await writeCommand(connected, CMD_START);
-          await subscribeToWeight(connected);
-        } catch (err: unknown) {
-          console.error('Connection error:', err);
-          setMessage('Connection failed.');
-          Toast.show({
-            type: 'error',
-            text1: 'Connection error',
-            text2: getErrorMessage(err),
-          });
-        } finally {
-          isConnectingRef.current = false;
-        }
+        await connectToScale(scannedDevice, stickyId ? 'reconnecting' : 'connecting');
       });
     };
+
+    const reconnectLoop = setInterval(() => {
+      if (isConnected) return;
+      if (connectionPhase !== 'reconnecting') return;
+      if (isConnectingRef.current) return;
+      scanAndConnect();
+    }, 1200);
 
     (async () => {
       if (await requestPermissions()) {
@@ -201,17 +286,29 @@ const useBle = () => {
     })();
 
     return () => {
+      clearInterval(reconnectLoop);
+
       bleStateSubscriptionRef.current?.remove();
       bleStateSubscriptionRef.current = null;
+
+      clearDeviceSubscriptions();
 
       bleManagerRef.current?.stopDeviceScan();
       bleManagerRef.current?.destroy();
       bleManagerRef.current = null;
     };
     // eslint-disable-next-line
-  }, [subscribeToWeight, writeCommand]);
+  }, [connectToScale, connectionPhase, isConnected, subscribeToWeight, writeCommand]);
 
-  return { device, isConnected, message, tareScale, weight, battery };
+  return {
+    device,
+    isConnected,
+    message,
+    connectionPhase,
+    tareScale,
+    weight,
+    battery,
+  };
 };
 
 export default useBle;

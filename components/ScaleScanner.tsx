@@ -1,12 +1,15 @@
 import { useKeepAwake } from 'expo-keep-awake';
-import React, { useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
+import React, { useEffect, useRef, useState } from 'react';
 import { FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { IconButton, useTheme } from 'react-native-paper';
+import { ActivityIndicator, IconButton, useTheme } from 'react-native-paper';
 import useBle from '../hooks/useBle';
 import { ThemedText } from './ThemedText';
 
 const ScaleScanner = () => {
-  const { weight, message, tareScale, isConnected, battery } = useBle();
+  const { weight, message, tareScale, isConnected, battery, connectionPhase } =
+    useBle();
   const theme = useTheme();
 
   // Keep screen awake during BLE operations
@@ -15,22 +18,130 @@ const ScaleScanner = () => {
   // State for saved weights
   const [savedWeights, setSavedWeights] = useState<number[]>([]);
 
+  const lastSavedWeightRef = useRef<number | null>(null);
+  const autoSaveArmedRef = useRef(false);
+  const stableSinceRef = useRef<number | null>(null);
+  const stableValueRef = useRef<number | null>(null);
+  const lastSeenWeightRef = useRef<number | null>(null);
+
+  const saveWeightValue = (grams: number) => {
+    setSavedWeights((prev) => [grams, ...prev]);
+  };
+
   // Save current weight
-  const handleSaveWeight = () => {
-    if (weight && !isNaN(Number(weight))) {
-      setSavedWeights([Number(weight), ...savedWeights]);
-    }
+  const handleSaveWeight = async () => {
+    if (weight === null || isNaN(Number(weight))) return;
+    const grams = Number(weight);
+    saveWeightValue(grams);
+    lastSavedWeightRef.current = grams;
+    autoSaveArmedRef.current = false;
+    stableSinceRef.current = null;
+    stableValueRef.current = null;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const handleSaveAndTare = async () => {
+    if (weight === null || isNaN(Number(weight))) return;
+    const grams = Number(weight);
+    saveWeightValue(grams);
+    lastSavedWeightRef.current = grams;
+    autoSaveArmedRef.current = false;
+    stableSinceRef.current = null;
+    stableValueRef.current = null;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    await tareScale();
+  };
+
+  const handleTare = async () => {
+    autoSaveArmedRef.current = false;
+    stableSinceRef.current = null;
+    stableValueRef.current = null;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    await tareScale();
   };
 
   // Delete a single weight
   const handleDeleteWeight = (index: number) => {
-    setSavedWeights(savedWeights.filter((_, i) => i !== index));
+    setSavedWeights((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Reset all saved weights
   const handleResetWeights = () => {
     setSavedWeights([]);
   };
+
+  const handleCopySession = async () => {
+    const text = savedWeights.map((w) => `${w}g`).join('\n');
+    await Clipboard.setStringAsync(text ? `${text}\n` : '');
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  useEffect(() => {
+    if (!isConnected) return;
+    if (weight === null || isNaN(Number(weight))) return;
+
+    const grams = Number(weight);
+    const now = Date.now();
+
+    const AUTO_SAVE_STABLE_MS = 2000;
+    const AUTO_SAVE_TOLERANCE_G = 1;
+    const AUTO_SAVE_MIN_G = 2;
+    const AUTO_SAVE_MIN_DELTA_G = 2;
+
+    const lastSaved = lastSavedWeightRef.current;
+    const lastSeen = lastSeenWeightRef.current;
+    lastSeenWeightRef.current = grams;
+
+    const differsFromLastSaved =
+      lastSaved === null || Math.abs(grams - lastSaved) >= AUTO_SAVE_MIN_DELTA_G;
+    const weightIsMeaningful = Math.abs(grams) >= AUTO_SAVE_MIN_G;
+
+    if (!autoSaveArmedRef.current && differsFromLastSaved && weightIsMeaningful) {
+      autoSaveArmedRef.current = true;
+      stableSinceRef.current = null;
+      stableValueRef.current = null;
+    }
+
+    if (!autoSaveArmedRef.current) return;
+
+    if (lastSeen !== null && Math.abs(grams - lastSeen) > AUTO_SAVE_TOLERANCE_G) {
+      stableSinceRef.current = null;
+      stableValueRef.current = null;
+      return;
+    }
+
+    if (stableSinceRef.current === null || stableValueRef.current === null) {
+      stableSinceRef.current = now;
+      stableValueRef.current = grams;
+      return;
+    }
+
+    if (Math.abs(grams - stableValueRef.current) > AUTO_SAVE_TOLERANCE_G) {
+      stableSinceRef.current = now;
+      stableValueRef.current = grams;
+      return;
+    }
+
+    if (now - stableSinceRef.current < AUTO_SAVE_STABLE_MS) return;
+
+    const shouldSave =
+      lastSavedWeightRef.current === null ||
+      Math.abs(grams - lastSavedWeightRef.current) > AUTO_SAVE_TOLERANCE_G;
+    if (!shouldSave) {
+      autoSaveArmedRef.current = false;
+      stableSinceRef.current = null;
+      stableValueRef.current = null;
+      return;
+    }
+
+    saveWeightValue(grams);
+    lastSavedWeightRef.current = grams;
+    autoSaveArmedRef.current = false;
+    stableSinceRef.current = null;
+    stableValueRef.current = null;
+
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [isConnected, weight]);
 
   const styles = StyleSheet.create({
     container: {
@@ -56,6 +167,14 @@ const ScaleScanner = () => {
       justifyContent: 'center',
       marginTop: 64,
       gap: 8,
+    },
+    batteryWarningOverlay: {
+      position: 'absolute',
+      top: 112,
+      alignSelf: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
     },
     batteryBarBackground: {
       width: 90,
@@ -122,6 +241,11 @@ const ScaleScanner = () => {
       justifyContent: 'space-between',
       marginBottom: 8,
     },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
     resetButton: {
       paddingHorizontal: 8,
       paddingVertical: 4,
@@ -147,7 +271,7 @@ const ScaleScanner = () => {
 
   return (
     <>
-      {message && !isConnected && (
+      {!isConnected && (
         <View
           style={{
             flex: 1,
@@ -156,6 +280,16 @@ const ScaleScanner = () => {
             backgroundColor: theme.colors.background,
           }}
         >
+          {(connectionPhase === 'scanning' ||
+            connectionPhase === 'connecting' ||
+            connectionPhase === 'reconnecting') && (
+            <ActivityIndicator
+              animating
+              size="large"
+              color={theme.colors.primary}
+              style={{ marginBottom: 18 }}
+            />
+          )}
           <ThemedText
             style={[styles.status, { color: theme.colors.onBackground }]}
           >
@@ -183,6 +317,21 @@ const ScaleScanner = () => {
                 {battery !== null ? `${battery} %` : '--'}
               </ThemedText>
             </View>
+            {battery !== null && battery <= 10 && (
+              <View
+                style={[
+                  styles.batteryWarningOverlay,
+                  { backgroundColor: theme.colors.errorContainer },
+                ]}
+              >
+                <ThemedText
+                  type="defaultSemiBold"
+                  style={{ color: theme.colors.onErrorContainer }}
+                >
+                  Low battery ({battery}%)
+                </ThemedText>
+              </View>
+            )}
             <View style={styles.centerContentContainer}>
               {/* Battery Counter */}
 
@@ -217,13 +366,23 @@ const ScaleScanner = () => {
                   onPress={handleSaveWeight}
                   accessibilityLabel="Save weight"
                 />
+                <IconButton
+                  icon="plus-box"
+                  mode="contained"
+                  size={28}
+                  style={styles.addButton}
+                  containerColor={theme.colors.secondaryContainer}
+                  iconColor={theme.colors.onSecondaryContainer}
+                  onPress={handleSaveAndTare}
+                  accessibilityLabel="Save and tare"
+                />
               </View>
               <TouchableOpacity
                 style={[
                   styles.tareButton,
                   { backgroundColor: theme.colors.primary },
                 ]}
-                onPress={tareScale}
+                onPress={handleTare}
                 activeOpacity={0.85}
                 disabled={!isConnected}
               >
@@ -247,22 +406,30 @@ const ScaleScanner = () => {
                 >
                   Saved weights
                 </ThemedText>
-                <TouchableOpacity
-                  style={styles.resetButton}
-                  onPress={handleResetWeights}
-                  accessibilityLabel="Reset all saved weights"
-                >
-                  <ThemedText
-                    type="default"
-                    style={{
-                      color: theme.colors.error,
-                      fontWeight: 'bold',
-                      fontSize: 14,
-                    }}
+                <View style={styles.headerActions}>
+                  <IconButton
+                    icon="content-copy"
+                    size={20}
+                    onPress={handleCopySession}
+                    accessibilityLabel="Copy session to clipboard"
+                  />
+                  <TouchableOpacity
+                    style={styles.resetButton}
+                    onPress={handleResetWeights}
+                    accessibilityLabel="Reset all saved weights"
                   >
-                    Reset All
-                  </ThemedText>
-                </TouchableOpacity>
+                    <ThemedText
+                      type="default"
+                      style={{
+                        color: theme.colors.error,
+                        fontWeight: 'bold',
+                        fontSize: 14,
+                      }}
+                    >
+                      Reset All
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
               </View>
               <FlatList
                 data={savedWeights}
