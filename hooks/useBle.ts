@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
@@ -121,6 +122,22 @@ const useBle = () => {
     );
   }, []);
 
+  const startWeightStream = useCallback(
+    async (connected: Device) => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await writeCommand(connected, CMD_START);
+          await subscribeToWeight(connected);
+          return;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      throw new Error('Unable to start weight stream');
+    },
+    [subscribeToWeight, writeCommand],
+  );
+
   const clearDeviceSubscriptions = useCallback(() => {
     disconnectedSubscriptionRef.current?.remove();
     disconnectedSubscriptionRef.current = null;
@@ -168,8 +185,7 @@ const useBle = () => {
         setConnectionPhase('connected');
         setMessage('Connected to PROZIS Bit Scale.');
 
-        await writeCommand(connected, CMD_START);
-        await subscribeToWeight(connected);
+        await startWeightStream(connected);
       } catch (err: unknown) {
         setIsConnected(false);
         setDevice(null);
@@ -189,7 +205,7 @@ const useBle = () => {
         isConnectingRef.current = false;
       }
     },
-    [clearDeviceSubscriptions, subscribeToWeight, writeCommand],
+    [clearDeviceSubscriptions, startWeightStream],
   );
 
   useEffect(() => {
