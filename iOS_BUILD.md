@@ -58,3 +58,8 @@ npm run ios
 - If you see Bluetooth permission errors, confirm iOS shows the Bluetooth permission prompt and that Bluetooth is enabled.
 - If Xcode complains about signing, set a Team under Signing & Capabilities for the app target.
 - If pods fail, try rerunning `npx pod-install`.
+
+## BLE notes
+
+- BLE requires a physical device; the iOS Simulator cannot scan/connect over Bluetooth.
+- If you manually tap Disconnect in-app, the app pauses auto-reconnect until you tap Reconnect.

@@ -54,6 +54,7 @@ If these files are added later, keep this section in sync.
 - `app/`: Expo Router entrypoints (see `app/_layout.tsx`)
 - `components/`: UI components (e.g. `components/ScaleScanner.tsx`)
 - `hooks/`: React hooks (e.g. `hooks/useBle.ts`)
+- `hooks/bleProtocol.ts`: BLE protocol constants + payload decoding
 - `constants/`: shared constants (e.g. `constants/Colors.ts`)
 - `scripts/`: local scripts (e.g. `scripts/reset-project.js`)
 
@@ -119,6 +120,10 @@ When modifying files, keep formatting consistent with these rules.
 - Android BLE requires runtime permissions (see `hooks/useBle.ts`). If you change permissions, update both:
   - `app.json` android permissions
   - runtime permission request logic
+
+## App UX Notes
+
+- Auto-save is user-togglable (stability hold). It should ignore near-zero noise and can record removals as negative weights.
 
 ## iOS Build Notes (Physical Device)
 

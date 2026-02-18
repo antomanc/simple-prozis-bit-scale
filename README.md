@@ -7,10 +7,16 @@ A React Native app to connect, read, and interact with the Prozis Bit Scale via 
 ## Features
 
 - **Bluetooth LE Scanning & Connection**: Automatically scans for and connects to the "PROZIS Bit Scale".
+- **Sticky Reconnect**: Automatically reconnects when the scale turns back on.
 - **Real time Weight Display**: Shows real time weight readings from the scale.
 - **Battery Level Monitoring**: Displays the scale's battery percentage.
+- **Low Battery Warning**: Shows a warning overlay when the scale battery is low.
 - **Tare Functionality**: Remotely tares the scale from the app.
-- **Save & Manage Weights**: Save, view, and delete multiple weight measurements.
+- **Save & Tare**: Save the current weight and immediately tare in one action.
+- **Auto-Save (Stability Hold)**: Optional hands-free auto-save when the weight stays stable for ~2 seconds.
+- **Copy Session to Clipboard**: Copy the full session as formatted text for pasting into other apps.
+- **Disconnect / Reconnect**: Manually disconnect and reconnect to the scale.
+- **Removed Weights**: Negative weights are treated as removals and are displayed/exported as `X g (removed)`.
 
 ## Reverse Engineering: Prozis Bit Scale BLE Protocol
 
