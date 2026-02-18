@@ -1,5 +1,5 @@
 # Simple Prozis Bit Scale
-<img src="https://github.com/user-attachments/assets/1f0b8b88-1b96-4024-9ce9-7ce38cb98c68" alt="app screenshot" height="400">
+<img src="https://github.com/user-attachments/assets/613d81a1-e1bf-43b2-82d2-639aa7cf7ccb" alt="app screenshot" height="600">
 <img src="https://github.com/user-attachments/assets/f7132fef-e4d9-44be-a426-451f54003c5c" alt="scale" >
 
 A React Native app to connect, read, and interact with the Prozis Bit Scale via Bluetooth Low Energy (BLE). This project demonstrates the reverse engineering of the scale's BLE protocol, providing weight, battery readings and tare functionality.
